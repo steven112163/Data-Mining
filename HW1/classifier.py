@@ -1,5 +1,7 @@
 import pandas as pd
 from sklearn import preprocessing as pre
+from sklearn import feature_selection as fs
+import pprint
 
 
 def info_fixer(training_info: pd.DataFrame) -> pd.DataFrame:
@@ -42,8 +44,30 @@ def tpr_fixer(training_tpr: pd.DataFrame) -> pd.DataFrame:
     return patients
 
 
+def compute_mutual_information(training_data: pd.DataFrame) -> None:
+    """
+    Compute and show all mutual information between features and target
+    :param training_data: training data set
+    :return: None
+    """
+    all_info = {}
+    list_of_targets = tr_data['Target'].values
+    for col in list(training_data):
+        if col != 'No' and col != 'Target':
+            all_info[col] = fs.mutual_info_classif(tr_data[col].values.reshape(-1, 1), list_of_targets, n_neighbors=2)[
+                0]
+
+    # Use T, R, NBPS, NBPD, Comorbidities from output?
+    for k, e in all_info.items():
+        if len(k) > 5:
+            print(f'{k}: \t{e}')
+        else:
+            print(f'{k}:\t\t{e}')
+
+
 if __name__ == '__main__':
     pd.set_option('display.max_rows', None)
+    pp = pprint.PrettyPrinter()
 
     # Get Info sheet
     tr_info = pd.read_excel('training_data.xlsx', sheet_name='Info',
@@ -58,4 +82,6 @@ if __name__ == '__main__':
 
     # Merge Info and TPR
     tr_data = pd.merge(tr_info, tr_tpr, on='No')
-    print(tr_data)
+    # print(tr_data)
+
+    compute_mutual_information(tr_data)
