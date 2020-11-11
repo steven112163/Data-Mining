@@ -3,7 +3,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import SelectKBest, mutual_info_classif
 from sklearn.model_selection import StratifiedKFold
 from sklearn.neighbors import KNeighborsClassifier
-from typing import List
+from sklearn.naive_bayes import GaussianNB
+from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.metrics import f1_score, accuracy_score
+from typing import List, Tuple
 from statistics import mean
 import pprint
 
@@ -72,45 +75,111 @@ def cross_validator(training_data: pd.DataFrame, training_target: pd.Series) -> 
     :param training_target: training_target
     :return: None
     """
-    skf = StratifiedKFold()
-    acc = []
-    for train_index, test_index in skf.split(training_data, training_target):
-        # Get training set and testing set
-        data_train, target_train = training_data.iloc[train_index.tolist()], training_target.iloc[train_index.tolist()]
-        data_test, target_test = training_data.iloc[test_index.tolist()], training_target.iloc[test_index.tolist()]
+    skf = StratifiedKFold(shuffle=True)
+    accuracy = {'K Nearest Neighbors': {'1': [], '2': [], '3': []},
+                'Naive Bayes': {'1': [], '2': [], '3': []},
+                'Gaussian Process': {'1': [], '2': [], '3': []}}
+    score = {'K Nearest Neighbors': {'1': [], '2': [], '3': []},
+             'Naive Bayes': {'1': [], '2': [], '3': []},
+             'Gaussian Process': {'1': [], '2': [], '3': []}}
 
-        # Use training set to select features
-        features = feature_selection(data_train, target_train, 2)
+    # Run 10 times to get the average
+    for _ in range(10):
+        for train_index, test_index in skf.split(training_data, training_target):
+            # Get training set and testing set
+            data_train, target_train = training_data.iloc[train_index.tolist()], training_target.iloc[
+                train_index.tolist()]
+            data_test, target_test = training_data.iloc[test_index.tolist()], training_target.iloc[test_index.tolist()]
 
-        # Use model to train and predict
-        acc.append(k_nearest_neighbors(data_train, target_train, data_test, target_test, features))
-    print(acc)
-    print(mean(acc))
+            # Use training set to select features
+            for k in range(1, 4):
+                features = feature_selection(data_train, target_train, k)
+
+                # Use knn to train and predict
+                acc, f1 = k_nearest_neighbors(data_train, target_train, data_test, target_test, features)
+                accuracy['K Nearest Neighbors'][f'{k}'].append(acc)
+                score['K Nearest Neighbors'][f'{k}'].append(f1)
+
+                # Use naive bayes to train and predict
+                acc, f1 = naive_bayes(data_train, target_train, data_test, target_test, features)
+                accuracy['Naive Bayes'][f'{k}'].append(acc)
+                score['Naive Bayes'][f'{k}'].append(f1)
+
+                # Use gaussian process to train and predict
+                acc, f1 = gaussian_process(data_train, target_train, data_test, target_test, features)
+                accuracy['Gaussian Process'][f'{k}'].append(acc)
+                score['Gaussian Process'][f'{k}'].append(f1)
+
+    # Print results
+    print('=== Accuracy ===')
+    for model, results in accuracy.items():
+        print(f'=== {model} ===')
+        for num_of_features, values in results.items():
+            print(f'{num_of_features}: {mean(values)}')
+        print()
+    print('\n=== F1 score ===')
+    for model, results in score.items():
+        print(f'=== {model} ===')
+        for num_of_features, values in results.items():
+            print(f'{num_of_features}: {mean(values)}')
+        print()
 
 
 def k_nearest_neighbors(data_train: pd.DataFrame, target_train: pd.Series, data_test: pd.DataFrame,
-                        target_test: pd.Series, features: List[str]) -> float:
+                        target_test: pd.Series, features: List[str]) -> Tuple[float, float]:
     """
-
+    K Nearest Neighbors Classifier
     :param data_train: training data set
     :param target_train: training target
     :param data_test: testing data set
     :param target_test: testing target
     :param features: selected features
-    :return: accuracy
+    :return: accuracy and f1 score
     """
     # Train and predict
-    neigh = KNeighborsClassifier()
-    neigh.fit(data_train[features], target_train)
+    neigh = KNeighborsClassifier().fit(data_train[features], target_train)
     prediction = neigh.predict(data_test[features]).tolist()
 
-    # Get accuracy
-    diff = 0
-    for idx, target in enumerate(target_test):
-        if prediction[idx] == target:
-            diff += 1
+    # Return accuracy and f1 score
+    return accuracy_score(prediction, target_test), f1_score(prediction, target_test)
 
-    return float(diff) / len(prediction)
+
+def naive_bayes(data_train: pd.DataFrame, target_train: pd.Series, data_test: pd.DataFrame,
+                target_test: pd.Series, features: List[str]) -> Tuple[float, float]:
+    """
+    Naive Bayes Classifier
+    :param data_train: training data set
+    :param target_train: training target
+    :param data_test: testing data set
+    :param target_test: testing target
+    :param features: selected features
+    :return: accuracy and f1 score
+    """
+    # Train and predict
+    nb = GaussianNB().fit(data_train[features], target_train)
+    prediction = nb.predict(data_test[features])
+
+    # Return accuracy and f1 score
+    return accuracy_score(prediction, target_test), f1_score(prediction, target_test)
+
+
+def gaussian_process(data_train: pd.DataFrame, target_train: pd.Series, data_test: pd.DataFrame,
+                     target_test: pd.Series, features: List[str]) -> Tuple[float, float]:
+    """
+    Gaussian Process Classifier
+    :param data_train: training data set
+    :param target_train: training target
+    :param data_test: testing data set
+    :param target_test: testing target
+    :param features: selected features
+    :return: accuracy and f1 score
+    """
+    # Train and predict
+    nb = GaussianProcessClassifier().fit(data_train[features], target_train)
+    prediction = nb.predict(data_test[features])
+
+    # Return accuracy and f1 score
+    return accuracy_score(prediction, target_test), f1_score(prediction, target_test)
 
 
 if __name__ == '__main__':
@@ -121,21 +190,17 @@ if __name__ == '__main__':
     tr_info = pd.read_excel('training_data.xlsx', sheet_name='Info',
                             names=['No', 'Gender', 'Age', 'Comorbidities', 'Antibiotics', 'Bacteria', 'Target'])
     tr_info = info_fixer(tr_info)
-    # print(tr_info)
 
     # Get TPR sheet
     tr_tpr = pd.read_excel('training_data.xlsx', sheet_name='TPR')
     tr_tpr = tpr_fixer(tr_tpr)
-    # print(tr_tpr)
 
     # Merge Info and TPR
     tr_data = pd.merge(tr_info, tr_tpr, on='No')
-    # print(tr_data)
 
     # Get training target
     tr_target = tr_data['Target'].copy()
     del tr_data['Target']
     del tr_data['No']
 
-    # print(feature_selection(tr_data, tr_target, 2))
     cross_validator(tr_data, tr_target)
