@@ -5,9 +5,12 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import f1_score, accuracy_score
 from typing import List, Tuple
 from statistics import mean
+import matplotlib.pyplot as plt
 import pprint
 
 
@@ -76,12 +79,16 @@ def cross_validator(training_data: pd.DataFrame, training_target: pd.Series) -> 
     :return: None
     """
     skf = StratifiedKFold(shuffle=True)
-    accuracy = {'K Nearest Neighbors': {'1': [], '2': [], '3': []},
-                'Naive Bayes': {'1': [], '2': [], '3': []},
-                'Gaussian Process': {'1': [], '2': [], '3': []}}
-    score = {'K Nearest Neighbors': {'1': [], '2': [], '3': []},
-             'Naive Bayes': {'1': [], '2': [], '3': []},
-             'Gaussian Process': {'1': [], '2': [], '3': []}}
+    accuracy = {'K Nearest Neighbors': {'2': [], '3': [], '4': [], '5': []},
+                'Naive Bayes': {'2': [], '3': [], '4': [], '5': []},
+                'Gaussian Process': {'2': [], '3': [], '4': [], '5': []},
+                'Support Vector Machine': {'2': [], '3': [], '4': [], '5': []},
+                'Decision Tree': {'2': [], '3': [], '4': [], '5': []}}
+    score = {'K Nearest Neighbors': {'2': [], '3': [], '4': [], '5': []},
+             'Naive Bayes': {'2': [], '3': [], '4': [], '5': []},
+             'Gaussian Process': {'2': [], '3': [], '4': [], '5': []},
+             'Support Vector Machine': {'2': [], '3': [], '4': [], '5': []},
+             'Decision Tree': {'2': [], '3': [], '4': [], '5': []}}
 
     # Run 10 times to get the average
     for _ in range(10):
@@ -92,7 +99,7 @@ def cross_validator(training_data: pd.DataFrame, training_target: pd.Series) -> 
             data_test, target_test = training_data.iloc[test_index.tolist()], training_target.iloc[test_index.tolist()]
 
             # Use training set to select features
-            for k in range(1, 4):
+            for k in range(2, 6):
                 features = feature_selection(data_train, target_train, k)
 
                 # Use knn to train and predict
@@ -110,19 +117,46 @@ def cross_validator(training_data: pd.DataFrame, training_target: pd.Series) -> 
                 accuracy['Gaussian Process'][f'{k}'].append(acc)
                 score['Gaussian Process'][f'{k}'].append(f1)
 
-    # Print results
+                # Use support vector machine to train and predict
+                acc, f1 = support_vector_machine(data_train, target_train, data_test, target_test, features)
+                accuracy['Support Vector Machine'][f'{k}'].append(acc)
+                score['Support Vector Machine'][f'{k}'].append(f1)
+
+                # Use decision tree to train and predict
+                acc, f1 = decision_tree(data_train, target_train, data_test, target_test, features)
+                accuracy['Decision Tree'][f'{k}'].append(acc)
+                score['Decision Tree'][f'{k}'].append(f1)
+
+    # Print results and plot
     print('=== Accuracy ===')
+    plt.subplot(121)
+    plt.title('Accuracy')
     for model, results in accuracy.items():
         print(f'=== {model} ===')
+        mean_values = []
         for num_of_features, values in results.items():
+            mean_values.append(mean(values))
             print(f'{num_of_features}: {mean(values)}')
         print()
+        plt.plot(list(results.keys()), mean_values, label=f'{model}')
+    plt.ylim(0.0, 1.0)
+    plt.legend()
     print('\n=== F1 score ===')
+    plt.subplot(122)
+    plt.title('F1 score')
     for model, results in score.items():
         print(f'=== {model} ===')
+        mean_values = []
         for num_of_features, values in results.items():
+            mean_values.append(mean(values))
             print(f'{num_of_features}: {mean(values)}')
         print()
+        plt.plot(list(results.keys()), mean_values, label=f'{model}')
+    plt.ylim(0.0, 1.0)
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
 
 
 def k_nearest_neighbors(data_train: pd.DataFrame, target_train: pd.Series, data_test: pd.DataFrame,
@@ -137,7 +171,7 @@ def k_nearest_neighbors(data_train: pd.DataFrame, target_train: pd.Series, data_
     :return: accuracy and f1 score
     """
     # Train and predict
-    neigh = KNeighborsClassifier().fit(data_train[features], target_train)
+    neigh = KNeighborsClassifier(n_neighbors=3).fit(data_train[features], target_train)
     prediction = neigh.predict(data_test[features]).tolist()
 
     # Return accuracy and f1 score
@@ -182,6 +216,44 @@ def gaussian_process(data_train: pd.DataFrame, target_train: pd.Series, data_tes
     return accuracy_score(prediction, target_test), f1_score(prediction, target_test)
 
 
+def support_vector_machine(data_train: pd.DataFrame, target_train: pd.Series, data_test: pd.DataFrame,
+                           target_test: pd.Series, features: List[str]) -> Tuple[float, float]:
+    """
+    Support Vector Machine (classification)
+    :param data_train: training data set
+    :param target_train: training target
+    :param data_test: testing data set
+    :param target_test: testing target
+    :param features: selected features
+    :return: accuracy and f1 score
+    """
+    # Train and predict
+    svm = SVC().fit(data_train[features], target_train)
+    prediction = svm.predict(data_test[features])
+
+    # Return accuracy and f1 score
+    return accuracy_score(prediction, target_test), f1_score(prediction, target_test)
+
+
+def decision_tree(data_train: pd.DataFrame, target_train: pd.Series, data_test: pd.DataFrame,
+                  target_test: pd.Series, features: List[str]) -> Tuple[float, float]:
+    """
+    Decision Tree Classifier
+    :param data_train: training data set
+    :param target_train: training target
+    :param data_test: testing data set
+    :param target_test: testing target
+    :param features: selected features
+    :return: accuracy and f1 score
+    """
+    # Train and predict
+    dt = DecisionTreeClassifier(max_depth=2).fit(data_train[features], target_train)
+    prediction = dt.predict(data_test[features])
+
+    # Return accuracy and f1 score
+    return accuracy_score(prediction, target_test), f1_score(prediction, target_test)
+
+
 if __name__ == '__main__':
     pd.set_option('display.max_rows', None)
     pp = pprint.PrettyPrinter()
@@ -202,5 +274,19 @@ if __name__ == '__main__':
     tr_target = tr_data['Target'].copy()
     del tr_data['Target']
     del tr_data['No']
+
+    # Info
+    del tr_data['Gender']
+    del tr_data['Age']
+    del tr_data['Comorbidities']
+    del tr_data['Antibiotics']
+    del tr_data['Bacteria']
+
+    # TPR
+    '''del tr_data['T']
+    del tr_data['P']
+    del tr_data['R']
+    del tr_data['NBPS']
+    del tr_data['NBPD']'''
 
     cross_validator(tr_data, tr_target)
