@@ -125,6 +125,30 @@ def predict_tpr_fixer(training_tpr: pd.DataFrame, testing_tpr: pd.DataFrame) -> 
     return training_patients, testing_patients
 
 
+def predict(training_data: pd.DataFrame, training_target: pd.Series, testing_data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Predict target based on testing_data and Naive Bayes Classifier trained from training set
+    :param training_data: training data set
+    :param training_target: training target
+    :param testing_data: testing data set
+    :return: prediction result
+    """
+    # Get features
+    features = feature_selection(training_data, training_target, 7)
+
+    # Train the model
+    nb = GaussianNB().fit(training_data[features], training_target)
+
+    # Get prediction
+    prediction = nb.predict(testing_data[features])
+
+    # Construct result
+    result = pd.DataFrame(list(zip(testing_data['No'], list(prediction))), columns=['No', 'Target'])
+    print(result)
+
+    return result
+
+
 def feature_selection(training_data: pd.DataFrame, training_target: pd.Series, k) -> List[str]:
     """
     Compute and show all mutual information between features and target
@@ -384,3 +408,6 @@ if __name__ == '__main__':
         del tr_data['Target']
         del tr_data['No']
         del ts_data['Target']
+
+        # Predict and write the result to csv
+        predict(tr_data, tr_target, ts_data).to_csv('result.csv', index=False)
