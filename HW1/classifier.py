@@ -14,7 +14,7 @@ import argparse
 import numpy as np
 
 
-def tr_info_fixer(training_info: pd.DataFrame) -> pd.DataFrame:
+def cv_info_fixer(training_info: pd.DataFrame) -> pd.DataFrame:
     """
     Fix problems in Info training set, e.g. missing values and categorical values etc.
     :param training_info: Info training set
@@ -37,7 +37,7 @@ def tr_info_fixer(training_info: pd.DataFrame) -> pd.DataFrame:
     return new_info
 
 
-def tr_tpr_fixer(training_tpr: pd.DataFrame) -> pd.DataFrame:
+def cv_tpr_fixer(training_tpr: pd.DataFrame) -> pd.DataFrame:
     """
     Fix problems in TPR training set, e.g. missing values etc.
     :param training_tpr: TPR training set
@@ -54,6 +54,75 @@ def tr_tpr_fixer(training_tpr: pd.DataFrame) -> pd.DataFrame:
         patients[['T', 'P', 'R', 'NBPS', 'NBPD']])
 
     return patients
+
+
+def predict_info_fixer(training_info: pd.DataFrame, testing_info: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Fix problems in Info training and testing set, e.g. missing values and categorical values etc.
+    :param training_info: Info training set
+    :param testing_info: Info testing set
+    :return: new pandas DataFrame
+    """
+    new_tr_info, new_ts_info = training_info.copy(), testing_info.copy()
+    number_of_tr = len(new_tr_info.index)
+    new_info = new_tr_info.append(new_ts_info)
+
+    # Fill NaN with 0
+    new_info['Comorbidities'] = new_info['Comorbidities'].fillna(0)
+    new_info['Antibiotics'] = new_info['Antibiotics'].fillna(0)
+    new_info['Bacteria'] = new_info['Bacteria'].fillna(0)
+
+    # Assign unique values to distinct values in the column
+    new_info['Comorbidities'] = new_info.groupby('Comorbidities').ngroup()
+
+    # Assign 0 if it's 0, 1 if it's a string
+    new_info['Antibiotics'] = new_info.groupby('Antibiotics').ngroup().astype(bool).astype(int)
+    new_info['Bacteria'] = new_info.groupby('Bacteria').ngroup().astype(bool).astype(int)
+
+    # Write them back to training and testing
+    new_tr_info[['Comorbidities', 'Antibiotics', 'Bacteria']] = new_info[
+                                                                    ['Comorbidities', 'Antibiotics', 'Bacteria']].iloc[
+                                                                :number_of_tr]
+    new_ts_info[['Comorbidities', 'Antibiotics', 'Bacteria']] = new_info[
+                                                                    ['Comorbidities', 'Antibiotics', 'Bacteria']].iloc[
+                                                                number_of_tr:]
+
+    return new_tr_info, new_ts_info
+
+
+def predict_tpr_fixer(training_tpr: pd.DataFrame, testing_tpr: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Fix problems in TPR training and testing set, e.g. missing values etc.
+    :param training_tpr: TPR training set
+    :param testing_tpr: TPR testing set
+    :return: new pandas DataFrame
+    """
+    # Group all training data by patient number
+    sectors = training_tpr.groupby('No')
+
+    # Get means of each patient
+    training_patients = sectors.mean()
+
+    # Standardize all columns
+    ss = StandardScaler()
+    training_patients[['T', 'P', 'R', 'NBPS', 'NBPD']] = ss.fit_transform(
+        training_patients[['T', 'P', 'R', 'NBPS', 'NBPD']])
+
+    # Get mean and variance of training data
+    m = ss.mean_
+    variance = ss.var_
+
+    # Group all testing data by patient number
+    sectors = testing_tpr.groupby('No')
+
+    # Get means of each patient
+    testing_patients = sectors.mean()
+
+    # Scale all columns
+    testing_patients[['T', 'P', 'R', 'NBPS', 'NBPD']] = (testing_patients[
+                                                             ['T', 'P', 'R', 'NBPS', 'NBPD']] - m) / np.sqrt(variance)
+
+    return training_patients, testing_patients
 
 
 def feature_selection(training_data: pd.DataFrame, training_target: pd.Series, k) -> List[str]:
@@ -264,15 +333,19 @@ if __name__ == '__main__':
     args = parse_arguments()
     mode = args.mode
 
-    if not mode:
-        # Get Info sheet
-        tr_info = pd.read_excel('training_data.xlsx', sheet_name='Info',
-                                names=['No', 'Gender', 'Age', 'Comorbidities', 'Antibiotics', 'Bacteria', 'Target'])
-        tr_info = tr_info_fixer(tr_info)
+    # Get training Info sheet
+    tr_info = pd.read_excel('training_data.xlsx', sheet_name='Info',
+                            names=['No', 'Gender', 'Age', 'Comorbidities', 'Antibiotics', 'Bacteria', 'Target'])
 
-        # Get TPR sheet
-        tr_tpr = pd.read_excel('training_data.xlsx', sheet_name='TPR')
-        tr_tpr = tr_tpr_fixer(tr_tpr)
+    # Get training TPR sheet
+    tr_tpr = pd.read_excel('training_data.xlsx', sheet_name='TPR')
+
+    if not mode:
+        # Preprocess Info sheet
+        tr_info = cv_info_fixer(tr_info)
+
+        # Preprocess TPR sheet
+        tr_tpr = cv_tpr_fixer(tr_tpr)
 
         # Merge Info and TPR
         tr_data = pd.merge(tr_info, tr_tpr, on='No')
@@ -283,3 +356,31 @@ if __name__ == '__main__':
         del tr_data['No']
 
         cross_validator(tr_data, tr_target)
+    else:
+        # Get submission
+        sub = pd.read_csv('Submission.csv')
+
+        # Get testing Info sheet
+        ts_info = pd.read_excel('testing_data.xlsx', sheet_name='Info',
+                                names=['No', 'Gender', 'Age', 'Comorbidities', 'Antibiotics', 'Bacteria'])
+
+        # Merge ts_info and sub
+        ts_info = pd.merge(ts_info, sub, on='No')
+
+        # Get testing TPR sheet
+        ts_tpr = pd.read_excel('testing_data.xlsx', sheet_name='TPR')
+
+        # Preprocess training and testing Info
+        tr_info, ts_info = predict_info_fixer(tr_info, ts_info)
+
+        # Preprocess training and testing TPR
+        tr_tpr, ts_tpr = predict_tpr_fixer(tr_tpr, ts_tpr)
+
+        # Merge Info and TPR
+        tr_data, ts_data = pd.merge(tr_info, tr_tpr, on='No'), pd.merge(ts_info, ts_tpr, on='No')
+
+        # Get training target
+        tr_target = tr_data['Target'].copy()
+        del tr_data['Target']
+        del tr_data['No']
+        del ts_data['Target']
