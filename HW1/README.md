@@ -14,3 +14,10 @@
 |R|Respiration|呼吸/分鐘|
 |NBPS|Non-invasive Blood Pressure (Systolic)|收縮壓 mmHg|
 |NBPD|Non-invasive Blood Pressure (Diastolic)|舒張壓 mmHg|
+
+## Run  
+* mode 0 for cross validation  
+* mode 1 for prediction
+```shell script
+$ python3 classifier.py [-m (0-1)]
+```

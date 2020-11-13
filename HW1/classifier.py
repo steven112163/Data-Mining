@@ -1,18 +1,20 @@
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import SelectKBest, mutual_info_classif
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import RepeatedStratifiedKFold
 from sklearn.naive_bayes import GaussianNB
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.metrics import f1_score, accuracy_score
-from typing import List, Tuple
+from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
+from typing import List, Tuple, Dict
 from statistics import mean
 import matplotlib.pyplot as plt
 import pprint
+import argparse
+import numpy as np
 
 
-def info_fixer(training_info: pd.DataFrame) -> pd.DataFrame:
+def tr_info_fixer(training_info: pd.DataFrame) -> pd.DataFrame:
     """
     Fix problems in Info training set, e.g. missing values and categorical values etc.
     :param training_info: Info training set
@@ -35,7 +37,7 @@ def info_fixer(training_info: pd.DataFrame) -> pd.DataFrame:
     return new_info
 
 
-def tpr_fixer(training_tpr: pd.DataFrame) -> pd.DataFrame:
+def tr_tpr_fixer(training_tpr: pd.DataFrame) -> pd.DataFrame:
     """
     Fix problems in TPR training set, e.g. missing values etc.
     :param training_tpr: TPR training set
@@ -77,72 +79,145 @@ def cross_validator(training_data: pd.DataFrame, training_target: pd.Series) -> 
     :return: None
     """
     # Setup K fold
-    skf = StratifiedKFold(shuffle=True)
+    skf = RepeatedStratifiedKFold(n_repeats=10, random_state=0)
 
     # Setup accuracy and f1-score dictionary
     total_features = len(list(training_data)) + 1
-    accuracy = {'Naive Bayes': {f'{i}': [] for i in range(2, total_features)},
-                'Support Vector Machine': {f'{i}': [] for i in range(2, total_features)},
-                'Decision Tree': {f'{i}': [] for i in range(2, total_features)},
-                'Vote': {f'{i}': [] for i in range(2, total_features)}}
-    score = {'Naive Bayes': {f'{i}': [] for i in range(2, total_features)},
-             'Support Vector Machine': {f'{i}': [] for i in range(2, total_features)},
-             'Decision Tree': {f'{i}': [] for i in range(2, total_features)},
-             'Vote': {f'{i}': [] for i in range(2, total_features)}}
+    classifiers = ['Naive Bayes', 'Support Vector Machine', 'Decision Tree', 'Vote']
+    accuracy = {name: {f'{i}': [] for i in range(2, total_features)} for name in classifiers}
+    score = {name: {f'{i}': [] for i in range(2, total_features)} for name in classifiers}
+    confusion = {name: {f'{i}': [] for i in range(2, total_features)} for name in classifiers}
 
     # Run 10 times to get the average
-    for _ in range(10):
-        for train_index, test_index in skf.split(training_data, training_target):
-            # Get training set and testing set
-            data_train, target_train = training_data.iloc[train_index.tolist()], training_target.iloc[
-                train_index.tolist()]
-            data_test, target_test = training_data.iloc[test_index.tolist()], training_target.iloc[test_index.tolist()]
+    for train_index, test_index in skf.split(training_data, training_target):
+        # Get training set and testing set
+        data_train, target_train = training_data.iloc[train_index.tolist()], training_target.iloc[
+            train_index.tolist()]
+        data_test, target_test = training_data.iloc[test_index.tolist()], training_target.iloc[test_index.tolist()]
 
-            # Use training set to select features
-            for k in range(2, total_features):
-                features = feature_selection(data_train, target_train, k)
+        # Use training set to select features
+        for k in range(2, total_features):
+            features = feature_selection(data_train, target_train, k)
 
-                # Use naive bayes to train and predict
-                acc, f1, nb_predict = naive_bayes(data_train, target_train, data_test, target_test, features)
-                accuracy['Naive Bayes'][f'{k}'].append(acc)
-                score['Naive Bayes'][f'{k}'].append(f1)
+            # Use naive bayes to train and predict
+            acc, f1, nb_predict, conf = naive_bayes(data_train, target_train, data_test, target_test, features)
+            accuracy['Naive Bayes'][f'{k}'].append(acc)
+            score['Naive Bayes'][f'{k}'].append(f1)
+            confusion['Naive Bayes'][f'{k}'].append(conf)
 
-                # Use support vector machine to train and predict
-                acc, f1, svm_predict = support_vector_machine(data_train, target_train, data_test, target_test,
-                                                              features)
-                accuracy['Support Vector Machine'][f'{k}'].append(acc)
-                score['Support Vector Machine'][f'{k}'].append(f1)
+            # Use support vector machine to train and predict
+            acc, f1, svm_predict, conf = support_vector_machine(data_train, target_train, data_test, target_test,
+                                                                features)
+            accuracy['Support Vector Machine'][f'{k}'].append(acc)
+            score['Support Vector Machine'][f'{k}'].append(f1)
+            confusion['Support Vector Machine'][f'{k}'].append(conf)
 
-                # Use decision tree to train and predict
-                acc, f1, dt_predict = decision_tree(data_train, target_train, data_test, target_test, features)
-                accuracy['Decision Tree'][f'{k}'].append(acc)
-                score['Decision Tree'][f'{k}'].append(f1)
+            # Use decision tree to train and predict
+            acc, f1, dt_predict, conf = decision_tree(data_train, target_train, data_test, target_test, features)
+            accuracy['Decision Tree'][f'{k}'].append(acc)
+            score['Decision Tree'][f'{k}'].append(f1)
+            confusion['Decision Tree'][f'{k}'].append(conf)
 
-                # Get results voted by three models
-                results = list(zip(nb_predict, svm_predict, dt_predict))
-                voted = []
-                for i in results:
-                    voted.append(max(set(i), key=i.count))
-                accuracy['Vote'][f'{k}'].append(accuracy_score(voted, target_test))
-                score['Vote'][f'{k}'].append(f1_score(voted, target_test))
+            # Get results voted by three models
+            results = list(zip(nb_predict, svm_predict, dt_predict))
+            voted = []
+            for i in results:
+                voted.append(max(set(i), key=i.count))
+            accuracy['Vote'][f'{k}'].append(accuracy_score(voted, target_test))
+            score['Vote'][f'{k}'].append(f1_score(voted, target_test))
 
     # Print results and plot
     print('=== Accuracy ===')
     plt.subplot(121)
     plt.title('Accuracy')
-    for model, results in accuracy.items():
-        print(f'=== {model} ===')
-        mean_values = []
-        for num_of_features, values in results.items():
-            mean_values.append(mean(values))
-            print(f'{num_of_features}: {mean(values)}')
-        print()
-        plt.plot(list(results.keys()), mean_values, label=f'{model}')
-    plt.ylim(0.0, 1.0)
-    plt.legend()
+    plot_and_print(accuracy)
+
     print('\n=== F1 score ===')
     plt.subplot(122)
     plt.title('F1 score')
+    plot_and_print(score)
+
+    print('\n=== Confusion matrix ===')
+    for model, results in confusion.items():
+        if model == 'Vote':
+            continue
+        print(f'=== {model} ===')
+        for num_of_features, values in results.items():
+            mean_confusion = sum(values) / 10.0
+            print(f'{num_of_features}:')
+            pp.pprint(mean_confusion)
+        print()
+
+    plt.tight_layout()
+    plt.show()
+
+
+def naive_bayes(data_train: pd.DataFrame, target_train: pd.Series, data_test: pd.DataFrame,
+                target_test: pd.Series, features: List[str]) -> Tuple[float, float, List[int], np.ndarray]:
+    """
+    Naive Bayes Classifier
+    :param data_train: training data set
+    :param target_train: training target
+    :param data_test: testing data set
+    :param target_test: testing target
+    :param features: selected features
+    :return: accuracy, f1 score, prediction and confusion matrix
+    """
+    # Train and predict
+    nb = GaussianNB().fit(data_train[features], target_train)
+    prediction = nb.predict(data_test[features])
+
+    # Return accuracy, f1 score and prediction
+    return accuracy_score(prediction, target_test), f1_score(prediction, target_test), list(
+        prediction), confusion_matrix(target_test, prediction)
+
+
+def support_vector_machine(data_train: pd.DataFrame, target_train: pd.Series, data_test: pd.DataFrame,
+                           target_test: pd.Series, features: List[str]) -> Tuple[float, float, List[int], np.ndarray]:
+    """
+    Support Vector Machine (classification)
+    :param data_train: training data set
+    :param target_train: training target
+    :param data_test: testing data set
+    :param target_test: testing target
+    :param features: selected features
+    :return: accuracy, f1 score, prediction and confusion matrix
+    """
+    # Train and predict
+    svm = SVC(kernel='linear').fit(data_train[features], target_train)
+    prediction = svm.predict(data_test[features])
+
+    # Return accuracy, f1 score and prediction
+    return accuracy_score(prediction, target_test), f1_score(prediction, target_test), list(
+        prediction), confusion_matrix(target_test, prediction)
+
+
+def decision_tree(data_train: pd.DataFrame, target_train: pd.Series, data_test: pd.DataFrame,
+                  target_test: pd.Series, features: List[str]) -> Tuple[float, float, List[int], np.ndarray]:
+    """
+    Decision Tree Classifier
+    :param data_train: training data set
+    :param target_train: training target
+    :param data_test: testing data set
+    :param target_test: testing target
+    :param features: selected features
+    :return: accuracy, f1 score, prediction and confusion matrix
+    """
+    # Train and predict
+    dt = DecisionTreeClassifier(max_depth=2).fit(data_train[features], target_train)
+    prediction = dt.predict(data_test[features])
+
+    # Return accuracy, f1 score and prediction
+    return accuracy_score(prediction, target_test), f1_score(prediction, target_test), list(
+        prediction), confusion_matrix(target_test, prediction)
+
+
+def plot_and_print(score: Dict[str, Dict[str, List[float]]]) -> None:
+    """
+    Plot and print the results in score
+    :param score: Dictionary of every classifier's results
+    :return: None
+    """
     for model, results in score.items():
         print(f'=== {model} ===')
         mean_values = []
@@ -154,86 +229,57 @@ def cross_validator(training_data: pd.DataFrame, training_target: pd.Series) -> 
     plt.ylim(0.0, 1.0)
     plt.legend()
 
-    plt.tight_layout()
-    plt.show()
 
-
-def naive_bayes(data_train: pd.DataFrame, target_train: pd.Series, data_test: pd.DataFrame,
-                target_test: pd.Series, features: List[str]) -> Tuple[float, float, List[int]]:
+def check_int_range(value: str) -> int:
     """
-    Naive Bayes Classifier
-    :param data_train: training data set
-    :param target_train: training target
-    :param data_test: testing data set
-    :param target_test: testing target
-    :param features: selected features
-    :return: accuracy, f1 score and prediction
+    Check whether value is 0 or 1
+    :param value: string value
+    :return: integer value
     """
-    # Train and predict
-    nb = GaussianNB().fit(data_train[features], target_train)
-    prediction = nb.predict(data_test[features])
-
-    # Return accuracy, f1 score and prediction
-    return accuracy_score(prediction, target_test), f1_score(prediction, target_test), list(prediction)
+    int_value = int(value)
+    if int_value != 0 and int_value != 1:
+        raise argparse.ArgumentTypeError(f'"{value}" is an invalid value. It should be 0 or 1.')
+    return int_value
 
 
-def support_vector_machine(data_train: pd.DataFrame, target_train: pd.Series, data_test: pd.DataFrame,
-                           target_test: pd.Series, features: List[str]) -> Tuple[float, float, List[int]]:
+def parse_arguments():
     """
-    Support Vector Machine (classification)
-    :param data_train: training data set
-    :param target_train: training target
-    :param data_test: testing data set
-    :param target_test: testing target
-    :param features: selected features
-    :return: accuracy, f1 score and prediction
+    Parse all arguments
+    :return: arguments
     """
-    # Train and predict
-    svm = SVC(kernel='linear').fit(data_train[features], target_train)
-    prediction = svm.predict(data_test[features])
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-m', '--mode', help='0: cross validation, 1: prediction', default=0, type=check_int_range)
 
-    # Return accuracy, f1 score and prediction
-    return accuracy_score(prediction, target_test), f1_score(prediction, target_test), list(prediction)
-
-
-def decision_tree(data_train: pd.DataFrame, target_train: pd.Series, data_test: pd.DataFrame,
-                  target_test: pd.Series, features: List[str]) -> Tuple[float, float, List[int]]:
-    """
-    Decision Tree Classifier
-    :param data_train: training data set
-    :param target_train: training target
-    :param data_test: testing data set
-    :param target_test: testing target
-    :param features: selected features
-    :return: accuracy, f1 score and prediction
-    """
-    # Train and predict
-    dt = DecisionTreeClassifier(max_depth=2).fit(data_train[features], target_train)
-    prediction = dt.predict(data_test[features])
-
-    # Return accuracy, f1 score and prediction
-    return accuracy_score(prediction, target_test), f1_score(prediction, target_test), list(prediction)
+    return parser.parse_args()
 
 
 if __name__ == '__main__':
+    """
+    Main function
+    command: python3 classifier.py [-m (0-1)]
+    """
     pd.set_option('display.max_rows', None)
     pp = pprint.PrettyPrinter()
 
-    # Get Info sheet
-    tr_info = pd.read_excel('training_data.xlsx', sheet_name='Info',
-                            names=['No', 'Gender', 'Age', 'Comorbidities', 'Antibiotics', 'Bacteria', 'Target'])
-    tr_info = info_fixer(tr_info)
+    args = parse_arguments()
+    mode = args.mode
 
-    # Get TPR sheet
-    tr_tpr = pd.read_excel('training_data.xlsx', sheet_name='TPR')
-    tr_tpr = tpr_fixer(tr_tpr)
+    if not mode:
+        # Get Info sheet
+        tr_info = pd.read_excel('training_data.xlsx', sheet_name='Info',
+                                names=['No', 'Gender', 'Age', 'Comorbidities', 'Antibiotics', 'Bacteria', 'Target'])
+        tr_info = tr_info_fixer(tr_info)
 
-    # Merge Info and TPR
-    tr_data = pd.merge(tr_info, tr_tpr, on='No')
+        # Get TPR sheet
+        tr_tpr = pd.read_excel('training_data.xlsx', sheet_name='TPR')
+        tr_tpr = tr_tpr_fixer(tr_tpr)
 
-    # Get training target
-    tr_target = tr_data['Target'].copy()
-    del tr_data['Target']
-    del tr_data['No']
+        # Merge Info and TPR
+        tr_data = pd.merge(tr_info, tr_tpr, on='No')
 
-    cross_validator(tr_data, tr_target)
+        # Get training target
+        tr_target = tr_data['Target'].copy()
+        del tr_data['Target']
+        del tr_data['No']
+
+        cross_validator(tr_data, tr_target)
