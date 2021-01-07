@@ -1,10 +1,9 @@
-# Data-Mining HW1
+# Data-Mining HW2
 
 
 
 ## Prerequisites
 * pandas >= 1.1.4
-* scikit-learn >= 0.23.2
 * matplotlib >= 3.3.2
 * xlrd >= 1.2.0
 
@@ -24,8 +23,7 @@
 ## Run  
 |Argument|Description|Default|
 |---|---|---|
-|-m, --mode|0: cross validation, 1: prediction|0 (0-1)|
 |-v, --verbosity|verbosity level|0 (0-1)|  
 ```shell script
-$ python3 classifier.py [-m (0-1)] [-v (0-1)]
+$ python3 logistic_regression.py [-v (0-1)]
 ```
