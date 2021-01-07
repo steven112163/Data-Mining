@@ -16,8 +16,9 @@
 |NBPD|Non-invasive Blood Pressure (Diastolic)|舒張壓 mmHg|
 
 ## Run  
-* mode 0 for cross validation  
-* mode 1 for prediction
+|Argument|Description|Default|
+|---|---|---|
+|-m, --mode|0: cross validation, 1: prediction|0 (0-1)|  
 ```shell script
 $ python3 classifier.py [-m (0-1)]
 ```

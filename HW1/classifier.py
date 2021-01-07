@@ -11,6 +11,7 @@ from statistics import mean
 import matplotlib.pyplot as plt
 import pprint
 import argparse
+import sys
 import numpy as np
 
 
@@ -20,6 +21,7 @@ def cv_info_fixer(training_info: pd.DataFrame) -> pd.DataFrame:
     :param training_info: Info training set
     :return: new pandas DataFrame
     """
+    info_log('=== Fix Info training set ===')
     new_info = training_info.copy()
 
     # Fill NaN with 0
@@ -43,6 +45,8 @@ def cv_tpr_fixer(training_tpr: pd.DataFrame) -> pd.DataFrame:
     :param training_tpr: TPR training set
     :return: new pandas DataFrame
     """
+    info_log('=== Fix TPR training set ===')
+
     # Group all data by patient number
     sectors = training_tpr.groupby('No')
 
@@ -63,6 +67,8 @@ def predict_info_fixer(training_info: pd.DataFrame, testing_info: pd.DataFrame) 
     :param testing_info: Info testing set
     :return: new pandas DataFrame
     """
+    info_log('=== Fix Info training and testing set ===')
+
     new_tr_info, new_ts_info = training_info.copy(), testing_info.copy()
     number_of_tr = len(new_tr_info.index)
     new_info = new_tr_info.append(new_ts_info)
@@ -97,6 +103,8 @@ def predict_tpr_fixer(training_tpr: pd.DataFrame, testing_tpr: pd.DataFrame) -> 
     :param testing_tpr: TPR testing set
     :return: new pandas DataFrame
     """
+    info_log('=== Fix TPR training and testing set ===')
+
     # Group all training data by patient number
     sectors = training_tpr.groupby('No')
 
@@ -133,6 +141,8 @@ def predict(training_data: pd.DataFrame, training_target: pd.Series, testing_dat
     :param testing_data: testing data set
     :return: prediction result
     """
+    info_log('=== Predict ===')
+
     # Get features
     features = feature_selection(training_data, training_target, 7)
 
@@ -171,6 +181,8 @@ def cross_validator(training_data: pd.DataFrame, training_target: pd.Series) -> 
     :param training_target: training_target
     :return: None
     """
+    info_log('=== Perform cross validation ===')
+
     # Setup K fold
     skf = RepeatedStratifiedKFold(n_repeats=10, random_state=0)
 
@@ -335,13 +347,35 @@ def check_int_range(value: str) -> int:
     return int_value
 
 
+def info_log(log: str) -> None:
+    """
+    Print information log
+    :param log: log to be displayed
+    :return: None
+    """
+    if verbosity > 0:
+        print(f'[\033[96mINFO\033[00m] {log}')
+        sys.stdout.flush()
+
+
+def error_log(log: str) -> None:
+    """
+    Print error log
+    :param log: log to be displayed
+    :return: None
+    """
+    print(f'[\033[91mERROR\033[00m] {log}')
+    sys.stdout.flush()
+
+
 def parse_arguments():
     """
     Parse all arguments
     :return: arguments
     """
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description='Classifier')
     parser.add_argument('-m', '--mode', help='0: cross validation, 1: prediction', default=0, type=check_int_range)
+    parser.add_argument('-v', '--verbosity', help='verbosity level (0-1)', default=0, type=check_int_range)
 
     return parser.parse_args()
 
@@ -356,15 +390,18 @@ if __name__ == '__main__':
 
     args = parse_arguments()
     mode = args.mode
+    verbosity = args.verbosity
 
     # Get training Info sheet
-    tr_info = pd.read_excel('training_data.xlsx', sheet_name='Info',
+    info_log('=== Loading training data ===')
+    tr_info = pd.read_excel('data/training_data.xlsx', sheet_name='Info',
                             names=['No', 'Gender', 'Age', 'Comorbidities', 'Antibiotics', 'Bacteria', 'Target'])
-
     # Get training TPR sheet
-    tr_tpr = pd.read_excel('training_data.xlsx', sheet_name='TPR')
+    tr_tpr = pd.read_excel('data/training_data.xlsx', sheet_name='TPR')
 
     if not mode:
+        info_log('=== Cross validation ===')
+
         # Preprocess Info sheet
         tr_info = cv_info_fixer(tr_info)
 
@@ -381,18 +418,19 @@ if __name__ == '__main__':
 
         cross_validator(tr_data, tr_target)
     else:
+        info_log('=== Prediction ===')
+
         # Get submission
-        sub = pd.read_csv('Submission.csv')
+        sub = pd.read_csv('data/Submission.csv')
 
         # Get testing Info sheet
-        ts_info = pd.read_excel('testing_data.xlsx', sheet_name='Info',
+        info_log('=== Loading testing data ===')
+        ts_info = pd.read_excel('data/testing_data.xlsx', sheet_name='Info',
                                 names=['No', 'Gender', 'Age', 'Comorbidities', 'Antibiotics', 'Bacteria'])
-
         # Merge ts_info and sub
         ts_info = pd.merge(ts_info, sub, on='No')
-
         # Get testing TPR sheet
-        ts_tpr = pd.read_excel('testing_data.xlsx', sheet_name='TPR')
+        ts_tpr = pd.read_excel('data/testing_data.xlsx', sheet_name='TPR')
 
         # Preprocess training and testing Info
         tr_info, ts_info = predict_info_fixer(tr_info, ts_info)
