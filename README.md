@@ -8,3 +8,4 @@ HWs of Data Mining Fall 2020 NCTU 資料探勘 5284
 * scikit-learn >= 0.23.2
 * matplotlib >= 3.3.2
 * xlrd >= 1.2.0
+* scipy >= 1.5.4

@@ -10,6 +10,8 @@ from sklearn.model_selection import RepeatedStratifiedKFold
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 from typing import List, Tuple, Dict
 from statistics import mean
+from scipy.special import expit, expm1
+from scipy.linalg import inv
 
 
 def cv_info_fixer(training_info: pd.DataFrame) -> pd.DataFrame:
@@ -155,16 +157,16 @@ def cross_validator(training_data: pd.DataFrame, training_target: pd.Series) -> 
     info_log('=== Perform cross validation ===')
 
     # Setup K fold
-    skf = RepeatedStratifiedKFold(n_repeats=10, random_state=0)
+    skf = RepeatedStratifiedKFold(n_repeats=1, random_state=0)
 
-    # Setup accuracy and f1-score dictionary
-    total_features = len(list(training_data)) + 1
-    classifiers = ['Naive Bayes', 'Support Vector Machine', 'Decision Tree', 'Vote']
-    accuracy = {name: {f'{i}': [] for i in range(2, total_features)} for name in classifiers}
-    score = {name: {f'{i}': [] for i in range(2, total_features)} for name in classifiers}
-    confusion = {name: {f'{i}': [] for i in range(2, total_features)} for name in classifiers}
+    # Setup number of total features
+    # total_features = len(list(training_data)) + 1
+    total_features = 3
 
     # Run 10 times to get the average
+    iteration = 0
+    accuracy = {'gd': [], 'nm': []}
+    f1 = {'gd': [], 'nm': []}
     for train_index, test_index in skf.split(training_data, training_target):
         # Get training set and testing set
         data_train, target_train = training_data.iloc[train_index.tolist()], training_target.iloc[
@@ -173,20 +175,214 @@ def cross_validator(training_data: pd.DataFrame, training_target: pd.Series) -> 
 
         # Use training set to select features
         for k in range(2, total_features):
+            info_log(f'=== Iteration: {iteration}, Num of features: {k} ===')
             features = feature_selection(data_train, target_train, k)
-        # TODO
 
-    plt.tight_layout()
-    plt.show()
+            # Concatenate training data
+            concatenated_train = pd.concat([data_train[features], target_train], axis=1, ignore_index=True)
+            concatenated_train.columns = features + ['Target']
+
+            # Logistic regression
+            gd_weight, nm_weight = logistic_regression(concatenated_train, len(features))
+
+            # Concatenate testing data
+            concatenated_test = pd.concat([data_test[features], target_test], axis=1, ignore_index=True)
+            concatenated_test.columns = features + ['Target']
+
+            # Classify testing data
+            test_result = classify(concatenated_test, gd_weight, nm_weight, len(features))
+            accuracy['gd'].append(test_result['gd'][0])
+            f1['gd'].append(test_result['gd'][1])
+            accuracy['nm'].append(test_result['nm'][0])
+            f1['nm'].append(test_result['nm'][1])
+
+        iteration += 1
+
+    # Print average result
+    print('Gradient descent:')
+    print(f'\tAverage accuracy: {mean(accuracy["gd"])}')
+    print(f'\tAverage f1-score: {mean(f1["gd"])}')
+    print("Newton's method:")
+    print(f'\tAverage accuracy: {mean(accuracy["nm"])}')
+    print(f'\tAverage f1-score: {mean(f1["nm"])}')
 
 
-def plot_and_print(score: Dict[str, Dict[str, List[float]]]) -> None:
+def logistic_regression(training_data: pd.DataFrame, num_of_features: int) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Logistic regression with gradient descent and Newton method
+    :param training_data: training data set
+    :param num_of_features: number of selected features
+    :return: Weights
+    """
+    num_of_data = len(training_data)
+
+    # Set up Φ
+    d1 = training_data[training_data['Target'] == 0]
+    d2 = training_data[training_data['Target'] == 1]
+    del d1['Target']
+    del d2['Target']
+    phi = np.ones((num_of_data, num_of_features + 1))
+    phi[:len(d1), :num_of_features] = d1
+    phi[len(d1):, :num_of_features] = d2
+
+    # Set up group number for each data
+    group = np.zeros((num_of_data, 1), dtype=int)
+    group[len(d1):, 0] = 1
+
+    # Get gradient descent result
+    gd_omega = gradient_descent(phi, group, num_of_features)
+
+    # Get Newton method result
+    nm_omega = newton_method(phi, group, num_of_data, num_of_features)
+
+    return gd_omega, nm_omega
+
+
+def gradient_descent(phi: np.ndarray, group: np.ndarray, num_of_features: int) -> np.ndarray:
+    """
+    Gradient descent
+    :param phi: Φ matrix
+    :param group: group of each data point
+    :param num_of_features: number of features
+    :return: weight vector omega
+    """
+    info_log('=== gradient descent ===')
+
+    # Set up initial guess of omega
+    omega = np.random.rand(num_of_features + 1, 1)
+
+    # Get optimal weight vector omega
+    count = 0
+    while True:
+        count += 1
+        old_omega = omega.copy()
+
+        # Update omega
+        omega += get_delta_j(phi, omega, group)
+
+        if np.linalg.norm(omega - old_omega) < 0.0001 or count > 1000:
+            break
+
+    return omega
+
+
+def newton_method(phi: np.ndarray, group: np.ndarray, num_of_data: int, num_of_features: int) -> np.ndarray:
+    """
+    Newton method
+    :param phi: Φ matrix
+    :param group: group of each data point
+    :param num_of_data: number of data
+    :param num_of_features: number of features
+    :return: weight vector omega
+    """
+    info_log("== Newton's method ==")
+
+    # Set up initial guess of omega
+    omega = np.random.rand(num_of_features + 1, 1)
+
+    # Set up D matrix for hessian matrix
+    d = np.zeros((num_of_data, num_of_data))
+
+    # Get optimal weight vector omega
+    count = 0
+    while True:
+        count += 1
+        old_omega = omega.copy()
+
+        # Fill in values in the diagonal of D matrix
+        product = phi.dot(omega)
+        diagonal = (expm1(-product) + 1) * np.power(expit(product), 2)
+        np.fill_diagonal(d, diagonal)
+
+        # Set up hessian matrix
+        hessian = phi.T.dot(d.dot(phi))
+
+        # Update omega
+        try:
+            # Use Newton method
+            omega += inv(hessian).dot(get_delta_j(phi, omega, group))
+        except:
+            # Use gradient descent if hessian is singular or infinite
+            omega += get_delta_j(phi, omega, group)
+
+        if np.linalg.norm(omega - old_omega) < 0.0001 or count > 1000:
+            break
+
+    return omega
+
+
+def get_delta_j(phi: np.ndarray, omega: np.ndarray, group: np.ndarray) -> np.ndarray:
+    """
+    Compute gradient J
+    :param phi: Φ matrix
+    :param omega: weight vector omega
+    :param group: group of each data point
+    :return: gradient J
+    """
+    return phi.T.dot(group - expit(phi.dot(omega)))
+
+
+def classify(testing_data: pd.DataFrame, gd_weight: np.ndarray, nm_weight: np.ndarray, num_of_features: int) -> Dict[
+    str, List[float]]:
     """
     Plot and print the results in score
-    :param score: Dictionary of every classifier's results
-    :return: None
+    :param testing_data: testing data set
+    :param gd_weight: weights from gradient descent
+    :param nm_weight: weights from Newton's method
+    :param num_of_features: number of features
+    :return: accuracy and f1-score of gradient descent and Newton's method
     """
-    # TODO
+    num_of_data = len(testing_data)
+
+    # Set up Φ
+    d1 = testing_data[testing_data['Target'] == 0]
+    d2 = testing_data[testing_data['Target'] == 1]
+    del d1['Target']
+    del d2['Target']
+    phi = np.ones((num_of_data, num_of_features + 1))
+    phi[:len(d1), :num_of_features] = d1
+    phi[len(d1):, :num_of_features] = d2
+
+    # Set up group number for each data
+    group = np.zeros((num_of_data, 1), dtype=int)
+    group[len(d1):, 0] = 1
+
+    # Get confusion matrix and classification result of gradient descent
+    gd_confusion = {'TP': 0, 'FP': 0, 'TN': 0, 'FN': 0}
+    for idx in range(num_of_data):
+        if phi[idx].dot(gd_weight) >= 0:
+            # Class D2
+            if group[idx, 0] == 1:
+                gd_confusion['TP'] += 1
+            else:
+                gd_confusion['FP'] += 1
+        else:
+            # Class D1
+            if group[idx, 0] == 0:
+                gd_confusion['TN'] += 1
+            else:
+                gd_confusion['FN'] += 1
+
+    # Get confusion matrix and classification result of Newton's method
+    nm_confusion = {'TP': 0, 'FP': 0, 'TN': 0, 'FN': 0}
+    for idx in range(num_of_data):
+        if phi[idx].dot(nm_weight) >= 0:
+            # Class D2
+            if group[idx, 0] == 1:
+                nm_confusion['TP'] += 1
+            else:
+                nm_confusion['FP'] += 1
+        else:
+            # Class D1
+            if group[idx, 0] == 0:
+                nm_confusion['TN'] += 1
+            else:
+                nm_confusion['FN'] += 1
+
+    return {'gd': [float(gd_confusion['TP'] + gd_confusion['TN']) / num_of_data,
+                   gd_confusion['TP'] / (gd_confusion['TP'] + 0.5 * gd_confusion['FP'] + 0.5 * gd_confusion['FN'])],
+            'nm': [float(nm_confusion['TP'] + nm_confusion['TN']) / num_of_data,
+                   nm_confusion['TP'] / (nm_confusion['TP'] + 0.5 * nm_confusion['FP'] + 0.5 * nm_confusion['FN'])]}
 
 
 def check_int_range(value: str) -> int:
@@ -242,16 +438,17 @@ if __name__ == '__main__':
     pd.set_option('display.max_rows', None)
     pp = pprint.PrettyPrinter()
 
+    # Parse arguments
     args = parse_arguments()
     mode = args.mode
     verbosity = args.verbosity
 
     # Get training Info sheet
     info_log('=== Loading training data ===')
-    tr_info = pd.read_excel('data/training_data.xlsx', sheet_name='Info',
+    tr_info = pd.read_excel('data/Training data.xlsx', sheet_name='Info',
                             names=['No', 'Gender', 'Age', 'Comorbidities', 'Antibiotics', 'Bacteria', 'Target'])
     # Get training TPR sheet
-    tr_tpr = pd.read_excel('data/training_data.xlsx', sheet_name='TPR')
+    tr_tpr = pd.read_excel('data/Training data.xlsx', sheet_name='TPR')
 
     if not mode:
         info_log('=== Cross validation ===')

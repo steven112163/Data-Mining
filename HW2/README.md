@@ -6,6 +6,7 @@
 * pandas >= 1.1.4
 * matplotlib >= 3.3.2
 * xlrd >= 1.2.0
+* scipy >= 1.5.4
 
 
 
