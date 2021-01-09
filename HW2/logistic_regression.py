@@ -145,12 +145,19 @@ class LogisticRegression(object):
 
         ax = fig.add_subplot(1, 1, 1)
 
-        colors = ['g' if value > 0 else 'r' for value in self.omega[1:]]
+        omega = self.omega.copy().reshape(len(self.omega))
+        colors = ['g' if value > 0 else 'r' for value in omega[1:]]
         y_pos = np.arange(len(self.features))
 
-        ax.barh(y_pos, self.omega[1:], align='center', color=colors)
-        ax.set_xlim(floor(min(self.omega[1:])), ceil(max(self.omega[1:])))
+        ax.barh(y_pos, omega[1:], align='center', color=colors)
+        for idx, value in reversed(list(enumerate(omega[1:]))):
+            ax.text(value + 0.01 if value > 0 else value - 0.26, idx, f'{value:.2f}', color='black', fontweight='bold',
+                    ha='left', va='center')
+        ax.set_xlim(floor(min(omega[1:])), ceil(max(omega[1:])))
         ax.set_yticks(y_pos)
         ax.set_yticklabels(self.features)
         ax.invert_yaxis()
         ax.set_title('Feature Weight')
+
+        plt.tight_layout()
+        plt.show()

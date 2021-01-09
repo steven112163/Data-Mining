@@ -423,7 +423,8 @@ def main(arguments: Namespace) -> None:
 
         # Construct results
         result = pd.DataFrame(list(zip(testing_data['No'], list(prediction))), columns=['No', 'Target'])
-        prob_result = pd.DataFrame(list(zip(testing_data['No'], list(prediction))), columns=['No', 'Target'])
+        prob_result = pd.DataFrame(list(zip(testing_data['No'], list(pred_prob))),
+                                   columns=['No', 'Probability to be 1'])
         info_log('Results')
         if verbosity:
             print(result)
@@ -433,6 +434,9 @@ def main(arguments: Namespace) -> None:
 
         # Write results to csv
         result.to_csv('result.csv', index=False)
+
+        # Visualize weights
+        lr.visualize()
 
 
 if __name__ == '__main__':
