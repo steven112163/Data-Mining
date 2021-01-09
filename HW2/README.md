@@ -4,6 +4,7 @@
 
 ## Prerequisites
 * pandas >= 1.1.4
+* scikit-learn >= 0.23.2
 * matplotlib >= 3.3.2
 * xlrd >= 1.2.0
 * scipy >= 1.5.4
@@ -24,7 +25,11 @@
 ## Run  
 |Argument|Description|Default|
 |---|---|---|
+|-l, --learning_rate|Learning rate|0.1|
+|-r, --regularization|0: without L2 regularization, 1: with L2 regularization|0 (0-1)|
+|-p, --penalty|Hyperparameter of regularization|1.0|
+|-m, --mode|0: cross validation, 1: prediction|0 (0-1)|
 |-v, --verbosity|verbosity level|0 (0-1)|  
 ```shell script
-$ python3 logistic_regression.py [-v (0-1)]
+$ python3 logistic_regression.py [-l learning_rate] [-r (0-1)] [-p penalty] [-m (0-1)] [-v (0-1)]
 ```
