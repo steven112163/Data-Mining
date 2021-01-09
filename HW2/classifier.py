@@ -193,7 +193,7 @@ def cross_validator(training_data: pd.DataFrame, training_target: pd.Series, lea
             weights['Gradient descent'][f'{k}'].append(weight)
 
             # Classify testing data
-            prediction = lr.predict(weight, data_test[features])
+            prediction = lr.predict(weight, data_test)
             acc, score = accuracy_score(target_test, prediction), f1_score(target_test, prediction)
             accuracy['Gradient descent'][f'{k}'].append(acc)
             f1['Gradient descent'][f'{k}'].append(score)
@@ -403,12 +403,36 @@ def main(arguments: Namespace) -> None:
         # Merge Info and TPR
         training_data = pd.merge(training_info, training_tpr, on='No')
         testing_data = pd.merge(testing_info, testing_tpr, on='No')
-
-        # Get training target
-        training_target = training_data['Target'].copy()
-        del training_data['Target']
         del training_data['No']
-        del testing_data['Target']
+
+        # Separate training data and training target
+        train_data = training_data.copy()
+        train_target = training_data['Target']
+        del train_data['Target']
+
+        # Get features
+        features = feature_selection(train_data, train_target, 5)
+
+        # Train the model
+        lr = LogisticRegression(learning_rate=learning_rate, regularization=regularization, penalty=penalty)
+        weight = lr.fit(training_data[features + ['Target']])
+
+        # Predict the results
+        prediction = lr.predict(weight=weight, test_data=testing_data)
+        pred_prob = lr.pred_probability(weight=weight, test_data=testing_data)
+
+        # Construct results
+        result = pd.DataFrame(list(zip(testing_data['No'], list(prediction))), columns=['No', 'Target'])
+        prob_result = pd.DataFrame(list(zip(testing_data['No'], list(prediction))), columns=['No', 'Target'])
+        info_log('Results')
+        if verbosity:
+            print(result)
+        info_log('Probability results')
+        if verbosity:
+            print(prob_result)
+
+        # Write results to csv
+        result.to_csv('result.csv', index=False)
 
 
 if __name__ == '__main__':

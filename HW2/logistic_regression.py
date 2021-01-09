@@ -89,14 +89,15 @@ class LogisticRegression(object):
         """
         return phi.T.dot(expit(phi.dot(omega)) - group)
 
-    def predict(self, weight: np.ndarray, testing_data: pd.DataFrame) -> np.ndarray:
+    def predict(self, weight: np.ndarray, test_data: pd.DataFrame) -> np.ndarray:
         """
         Plot and print the results in score
         :param weight: weights from gradient descent
-        :param testing_data: testing data set
+        :param test_data: testing data set
         :return: prediction
         """
         # Calculate parameters
+        testing_data = test_data[self.features]
         num_of_data = len(testing_data)
         num_of_features = len(list(testing_data))
 
@@ -113,14 +114,15 @@ class LogisticRegression(object):
 
         return result
 
-    def pred_probability(self, weight: np.ndarray, testing_data: pd.DataFrame) -> np.ndarray:
+    def pred_probability(self, weight: np.ndarray, test_data: pd.DataFrame) -> np.ndarray:
         """
         Plot and print the results in score
         :param weight: weights from gradient descent
-        :param testing_data: testing data set
+        :param test_data: testing data set
         :return: prediction
         """
         # Calculate parameters
+        testing_data = test_data[self.features]
         num_of_data = len(testing_data)
         num_of_features = len(list(testing_data))
 
