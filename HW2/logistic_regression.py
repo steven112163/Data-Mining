@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import pprint
 import sys
 import numpy as np
+from math import floor, ceil
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import SelectKBest, mutual_info_classif
@@ -151,7 +152,7 @@ def feature_selection(training_data: pd.DataFrame, training_target: pd.Series, k
 def cross_validator(training_data: pd.DataFrame, training_target: pd.Series, learning_rate: float, regularization: int,
                     penalty: float) -> None:
     """
-    Use cross validation to test each model
+    Use cross validation to test logistic regression
     :param training_data: training data set
     :param training_target: training_target
     :param learning_rate: learning rate
@@ -169,9 +170,10 @@ def cross_validator(training_data: pd.DataFrame, training_target: pd.Series, lea
 
     # Run 10 times to get the average
     iteration = 0
-    methods = ['Gradient descent', "Newton's method", 'sklearn']
+    methods = ['Gradient descent']
     accuracy = {name: {f'{i}': [] for i in range(2, total_features)} for name in methods}
     f1 = {name: {f'{i}': [] for i in range(2, total_features)} for name in methods}
+    weights = {name: {f'{i}': [] for i in range(2, total_features)} for name in methods if name != 'sklearn'}
     for train_index, test_index in skf.split(training_data, training_target):
         # Get training set and testing set
         data_train, target_train = training_data.iloc[train_index.tolist()], training_target.iloc[
@@ -179,7 +181,7 @@ def cross_validator(training_data: pd.DataFrame, training_target: pd.Series, lea
         data_test, target_test = training_data.iloc[test_index.tolist()], training_target.iloc[test_index.tolist()]
 
         # Use training set to select features
-        for k in range(5, total_features):
+        for k in range(2, total_features):
             info_log(f'=== Iteration: {iteration}, Num of features: {k} ===')
             features = feature_selection(data_train, target_train, k)
 
@@ -192,35 +194,13 @@ def cross_validator(training_data: pd.DataFrame, training_target: pd.Series, lea
             concatenated_test.columns = features + ['Target']
 
             # Logistic regression without penalty
-            gd_weight, nm_weight = logistic_regression(concatenated_train, len(features), learning_rate, regularization,
-                                                       penalty)
+            weight = logistic_regression(concatenated_train, len(features), learning_rate, regularization, penalty)
+            weights['Gradient descent'][f'{k}'].append(weight)
 
             # Classify testing data
-            test_result = classify(concatenated_test, gd_weight, nm_weight, len(features))
-            accuracy['Gradient descent'][f'{k}'].append(test_result['gd'][0])
-            f1['Gradient descent'][f'{k}'].append(test_result['gd'][1])
-            accuracy["Newton's method"][f'{k}'].append(test_result['nm'][0])
-            f1["Newton's method"][f'{k}'].append(test_result['nm'][1])
-
-            # Use logistic regression to train and predict
-            acc, score, params, intercept, prediction = lr(data_train, target_train, data_test, target_test, features)
-            accuracy['sklearn'][f'{k}'].append(acc)
-            f1['sklearn'][f'{k}'].append(score)
-
-            '''pp.pprint(gd_weight)
-            pp.pprint(nm_weight)
-            pp.pprint(params)
-            pp.pprint(intercept)
-            pp.pprint(test_result['gd'][2])
-            pp.pprint(test_result['gd'][0])
-            pp.pprint(test_result['gd'][1])
-            pp.pprint(test_result['nm'][2])
-            pp.pprint(test_result['nm'][0])
-            pp.pprint(test_result['nm'][1])
-            pp.pprint(prediction)
-            pp.pprint(acc)
-            pp.pprint(score)
-            return'''
+            acc, score = classify(concatenated_test, weight, len(features))
+            accuracy['Gradient descent'][f'{k}'].append(acc)
+            f1['Gradient descent'][f'{k}'].append(score)
 
         iteration += 1
 
@@ -239,34 +219,17 @@ def cross_validator(training_data: pd.DataFrame, training_target: pd.Series, lea
     plt.title('F1 score')
     plot_and_print(f1)
 
+    # Plot weights
+    plot_weights(weights)
+
     plt.tight_layout()
     plt.show()
 
 
-def lr(data_train: pd.DataFrame, target_train: pd.Series, data_test: pd.DataFrame,
-       target_test: pd.Series, features: List[str]) -> Tuple[float, float, any, any, any]:
-    """
-    Logistic regression
-    :param data_train: training data set
-    :param target_train: training target
-    :param data_test: testing data set
-    :param target_test: testing target
-    :param features: selected features
-    :return: accuracy, f1 score, prediction and confusion matrix
-    """
-    # Train and predict
-    nb = LogisticRegression(max_iter=1000, penalty='l2').fit(data_train[features], target_train)
-    prediction = nb.predict(data_test[features])
-
-    # Return accuracy, f1 score and prediction
-    return accuracy_score(prediction, target_test), f1_score(prediction,
-                                                             target_test), nb.coef_, nb.intercept_, prediction
-
-
 def logistic_regression(training_data: pd.DataFrame, num_of_features: int, learning_rate: float, regularization: int,
-                        penalty: float) -> Tuple[np.ndarray, np.ndarray]:
+                        penalty: float) -> np.ndarray:
     """
-    Logistic regression with gradient descent and Newton method
+    Logistic regression with gradient descent
     :param training_data: training data set
     :param num_of_features: number of selected features
     :param learning_rate: learning rate
@@ -283,12 +246,9 @@ def logistic_regression(training_data: pd.DataFrame, num_of_features: int, learn
     phi[:, 1:] = training_data.to_numpy()
 
     # Get gradient descent result
-    gd_omega = gradient_descent(phi, group, num_of_features, learning_rate, regularization, penalty)
+    omega = gradient_descent(phi, group, num_of_features, learning_rate, regularization, penalty)
 
-    # Get Newton method result
-    nm_omega = newton_method(phi, group, num_of_data, num_of_features, learning_rate, regularization, penalty)
-
-    return gd_omega, nm_omega
+    return omega
 
 
 def gradient_descent(phi: np.ndarray, group: np.ndarray, num_of_features: int, learning_rate: float,
@@ -328,68 +288,6 @@ def gradient_descent(phi: np.ndarray, group: np.ndarray, num_of_features: int, l
     return omega
 
 
-def newton_method(phi: np.ndarray, group: np.ndarray, num_of_data: int, num_of_features: int, learning_rate: float,
-                  regularization: int, penalty: float) -> np.ndarray:
-    """
-    Newton method
-    :param phi: Φ matrix
-    :param group: group of each data point
-    :param num_of_data: number of data
-    :param num_of_features: number of features
-    :param learning_rate: learning rate
-    :param regularization: 0: without L2 penalty, 1: with L2 penalty
-    :param penalty: hyperparameter of regularization
-    :return: weight vector omega
-    """
-    info_log("=== Newton's method ===")
-
-    # Set up initial guess of omega
-    omega = np.zeros((num_of_features + 1, 1))
-
-    # Set up D matrix for hessian matrix
-    d = np.zeros((num_of_data, num_of_data))
-
-    # Get optimal weight vector omega
-    count = 0
-    while True:
-        count += 1
-        old_omega = omega.copy()
-
-        # Fill in values in the diagonal of D matrix
-        product = phi.dot(omega)
-        diagonal = (expm1(-product) + 1e-11) * (np.power(expit(product), 2) + 1e-11)
-        np.fill_diagonal(d, diagonal)
-
-        # Set up hessian matrix
-        hessian = phi.T.dot(d.dot(phi))
-
-        # Update omega
-        if regularization:
-            # With L2 penalty
-            try:
-                # Use Newton method
-                omega -= learning_rate * (inv(hessian).dot(
-                    get_delta_j(phi, omega, group)) - penalty * omega - 0.75 * old_omega) / len(phi)
-            except:
-                # Use gradient descent if hessian is singular or infinite
-                omega -= learning_rate * (
-                        get_delta_j(phi, omega, group) - penalty * omega - 0.75 * old_omega) / len(phi)
-        else:
-            # Without L2 penalty
-            try:
-                # Use Newton method
-                omega -= learning_rate * (inv(hessian).dot(get_delta_j(phi, omega, group)) - 0.75 * old_omega) / len(
-                    phi)
-            except:
-                # Use gradient descent if hessian is singular or infinite
-                omega -= learning_rate * (get_delta_j(phi, omega, group) - 0.75 * old_omega) / len(phi)
-
-        if np.linalg.norm(omega - old_omega) < 1e-7 or count > 5000:
-            break
-
-    return omega
-
-
 def get_delta_j(phi: np.ndarray, omega: np.ndarray, group: np.ndarray) -> np.ndarray:
     """
     Compute gradient J
@@ -401,15 +299,13 @@ def get_delta_j(phi: np.ndarray, omega: np.ndarray, group: np.ndarray) -> np.nda
     return phi.T.dot(expit(phi.dot(omega)) - group)
 
 
-def classify(testing_data: pd.DataFrame, gd_weight: np.ndarray, nm_weight: np.ndarray, num_of_features: int) -> Dict[
-    str, List[float or any]]:
+def classify(testing_data: pd.DataFrame, weight: np.ndarray, num_of_features: int) -> Tuple[float, float]:
     """
     Plot and print the results in score
     :param testing_data: testing data set
-    :param gd_weight: weights from gradient descent
-    :param nm_weight: weights from Newton's method
+    :param weight: weights from gradient descent
     :param num_of_features: number of features
-    :return: accuracy and f1-score of gradient descent and Newton's method
+    :return: accuracy and f1-score of gradient descent
     """
     num_of_data = len(testing_data)
 
@@ -420,19 +316,12 @@ def classify(testing_data: pd.DataFrame, gd_weight: np.ndarray, nm_weight: np.nd
     phi[:, 1:] = testing_data.to_numpy()
 
     # Get results of gradient descent
-    gd_result = expit(phi.dot(gd_weight))
-    gd_result[gd_result >= 0.5] = 1
-    gd_result[gd_result < 0.5] = 0
-    gd_result = gd_result.reshape(num_of_data).astype(int)
+    result = expit(phi.dot(weight))
+    result[result >= 0.5] = 1
+    result[result < 0.5] = 0
+    result = result.reshape(num_of_data).astype(int)
 
-    # Get results of Newton's method
-    nm_result = expit(phi.dot(nm_weight))
-    nm_result[nm_result >= 0.5] = 1
-    nm_result[nm_result < 0.5] = 0
-    nm_result = nm_result.reshape(num_of_data).astype(int)
-
-    return {'gd': [accuracy_score(gd_result, group), f1_score(gd_result, group), gd_result],
-            'nm': [accuracy_score(nm_result, group), f1_score(nm_result, group), nm_result]}
+    return accuracy_score(result, group), f1_score(result, group)
 
 
 def plot_and_print(score: Dict[str, Dict[str, List[float]]]) -> None:
@@ -451,6 +340,39 @@ def plot_and_print(score: Dict[str, Dict[str, List[float]]]) -> None:
         plt.plot(list(results.keys()), mean_values, label=f'{method}')
     plt.ylim(0.0, 1.0)
     plt.legend()
+
+
+def plot_weights(weights: Dict[str, Dict[str, List[np.ndarray]]]) -> None:
+    """
+    Plot feature weights
+    :param weights: weights of Gradient descent and Newton's method with different features
+    :return: None
+    """
+    fig = plt.figure(2)
+    fig.canvas.set_window_title('Average Feature Weight')
+
+    rows, cols = len(weights.keys()), len(list(weights.values())[0].keys())
+
+    count = 1
+    for name, features in weights.items():
+        for num_of_features, weight in features.items():
+            ax = fig.add_subplot(rows, cols, count)
+
+            mean_weight = np.mean(np.array(weight), axis=0)
+            mean_weight = mean_weight.reshape(len(mean_weight))
+
+            colors = ['g' if value > 0 else 'r' for value in mean_weight[1:]]
+
+            y_pos = np.arange(int(num_of_features))
+
+            ax.barh(y_pos, mean_weight[1:], align='center', color=colors)
+            ax.set_xlim(floor(min(mean_weight[1:])), ceil(max(mean_weight[1:])))
+            ax.set_yticks(y_pos)
+            ax.set_yticklabels(y_pos)
+            ax.invert_yaxis()
+            ax.set_title(f'{num_of_features} features')
+
+            count += 1
 
 
 def check_regularization_range(value: str) -> float:
