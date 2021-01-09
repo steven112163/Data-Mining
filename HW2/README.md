@@ -31,5 +31,5 @@
 |-m, --mode|0: cross validation, 1: prediction|0 (0-1)|
 |-v, --verbosity|verbosity level|0 (0-1)|  
 ```shell script
-$ python3 logistic_regression.py [-l learning_rate] [-r (0-1)] [-p penalty] [-m (0-1)] [-v (0-1)]
+$ python3 classifier.py [-l learning_rate] [-r (0-1)] [-p penalty] [-m (0-1)] [-v (0-1)]
 ```
