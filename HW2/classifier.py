@@ -387,12 +387,12 @@ def main(arguments: Namespace) -> None:
 
         # Get testing Info sheet
         info_log('=== Loading testing data ===')
-        testing_info = pd.read_excel('data/testing_data.xlsx', sheet_name='Info',
+        testing_info = pd.read_excel('data/Testing data.xlsx', sheet_name='Info',
                                      names=['No', 'Gender', 'Age', 'Comorbidities', 'Antibiotics', 'Bacteria'])
         # Merge ts_info and sub
         testing_info = pd.merge(testing_info, submission, on='No')
         # Get testing TPR sheet
-        testing_tpr = pd.read_excel('data/testing_data.xlsx', sheet_name='TPR')
+        testing_tpr = pd.read_excel('data/Testing data.xlsx', sheet_name='TPR')
 
         # Preprocess training and testing Info
         training_info, testing_info = predict_info_fixer(training_info, testing_info)
